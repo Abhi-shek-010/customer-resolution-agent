@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 
 from .models import MockTicket, OrderRecord, PolicyEvidence, VerificationResult
@@ -246,7 +246,7 @@ class MockSupportSystem:
             for field_name, value in updates.items():
                 setattr(ticket, field_name, value)
 
-            ticket.updated_at = datetime.utcnow().isoformat() + "Z"
+            ticket.updated_at = datetime.now(timezone.utc).isoformat()
             return ticket.copy()
 
     def verify_ticket_state(

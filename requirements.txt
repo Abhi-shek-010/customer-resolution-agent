@@ -1,4 +1,5 @@
-# Minimal dependencies for local demo and evaluation
+# Compatible minimum versions for optional Gradio interface and client tooling.
+# The core agent, deterministic evaluation, and test suite require standard Python 3.10+ only.
 gradio>=4.0.0
 pydantic>=2.0.0
 requests>=2.31.0

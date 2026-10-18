@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 @dataclass
@@ -41,7 +41,7 @@ class MockTicket:
     assigned_route: str = "unassigned"  # unassigned, self_service, customer_question, human_review
     draft_reply: str = ""
     internal_notes: str = ""
-    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def copy(self) -> MockTicket:
         return MockTicket(
@@ -93,7 +93,7 @@ class VerificationResult:
     read_back_status: str
     read_back_route: str
     discrepancies: List[str] = field(default_factory=list)
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -112,9 +112,13 @@ class OrchestrationResult:
     simulated_action: SimulatedAction
     verification: VerificationResult
     is_simulated: bool = True
+    raw_model_proposal: Optional[Dict[str, Any]] = None
+    triage_proposal: Optional[Dict[str, Any]] = None
+    schema_valid: bool = True
+    schema_errors: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "ticket_id": self.ticket_id,
             "final_intent": self.final_intent,
             "final_route": self.final_route,
@@ -126,4 +130,11 @@ class OrchestrationResult:
             "simulated_action": self.simulated_action.to_dict(),
             "verification": self.verification.to_dict(),
             "is_simulated": self.is_simulated,
+            "schema_valid": self.schema_valid,
+            "schema_errors": self.schema_errors,
         }
+        if self.raw_model_proposal is not None:
+            payload["raw_model_proposal"] = self.raw_model_proposal
+        if self.triage_proposal is not None:
+            payload["triage_proposal"] = self.triage_proposal
+        return payload

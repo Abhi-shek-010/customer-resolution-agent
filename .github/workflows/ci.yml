@@ -1,0 +1,55 @@
+name: Customer Resolution Agent CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  offline-checks-and-eval:
+    name: Offline Validation, Unit Tests & Evaluation
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 1. Validate Synthetic Cases
+        run: |
+          python scripts/validate_cases.py
+
+      - name: 2. Run Reliability & Failure-Recovery Unit Tests
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: 3. Verify Canonical Challenge 07 Scenarios
+        run: |
+          python scripts/run_demo.py --offline
+
+      - name: 4. Run Deterministic Offline Evaluation Runner
+        run: |
+          python scripts/evaluate_agent.py --mode offline --output-json outputs/evaluation_summary.json --output-md docs/phase3_evaluation_report.md
+
+      - name: 5. Upload Evaluation Artifacts
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-evaluation-artifacts
+          path: |
+            outputs/evaluation_summary.json
+            docs/phase3_evaluation_report.md

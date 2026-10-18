@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
+
+# Ensure UTF-8 output on consoles when supported
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -87,22 +100,27 @@ def test_illegal_write_protection(agent: CustomerResolutionAgent):
     print("=" * 80)
     try:
         agent.mock_system.update_ticket("TCK-1001", payment_card_number="4111222233334444")
-        print("FAIL: Illegal write was permitted!")
+        print("[FAIL] Illegal write was permitted!")
         return False
     except ValueError as e:
-        print(f"PASS: Illegal write correctly blocked: {e}\n")
+        print(f"[PASS] Illegal write correctly blocked: {e}\n")
         return True
 
 
 def main():
-    print("\nRunning Customer Resolution Agent — Challenge 07 Verification Suite\n")
+    parser = argparse.ArgumentParser(description="Run Challenge 07 canonical verification scenarios.")
+    parser.add_argument("--offline", action="store_true", help="Force deterministic offline fallback without network probing.")
+    args = parser.parse_args()
+
+    mode_label = "OFFLINE" if args.offline else "AUTO"
+    print(f"\nRunning Customer Resolution Agent -- Challenge 07 Verification Suite (Mode: {mode_label})\n")
     mock_system = MockSupportSystem()
-    agent = CustomerResolutionAgent(mock_system=mock_system)
+    agent = CustomerResolutionAgent(mock_system=mock_system, use_ollama=not args.offline)
 
     # Scenario 1: Routine Grounded Request
     ok1 = run_scenario(
         agent=agent,
-        name="Scenario 1 — Routine Grounded Order Status (SYN-001)",
+        name="Scenario 1 - Routine Grounded Order Status (SYN-001)",
         ticket_id="TCK-1001",
         message="Where is order ORD-1042?",
         orders=[
@@ -116,7 +134,7 @@ def main():
     # Scenario 2: Missing Information
     ok2 = run_scenario(
         agent=agent,
-        name="Scenario 2 — Missing Lookup Information (SYN-002)",
+        name="Scenario 2 - Missing Lookup Information (SYN-002)",
         ticket_id="TCK-1002",
         message="My package is late. Can you check it?",
         orders=[],
@@ -126,7 +144,7 @@ def main():
     # Scenario 3: Delivery Dispute
     ok3 = run_scenario(
         agent=agent,
-        name="Scenario 3 — Delivery Dispute Requiring Mandatory Review (SYN-003)",
+        name="Scenario 3 - Delivery Dispute Requiring Mandatory Review (SYN-003)",
         ticket_id="TCK-1003",
         message="I never received order ORD-2098, even though tracking says delivered.",
         orders=[
