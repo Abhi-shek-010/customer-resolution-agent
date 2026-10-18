@@ -2,7 +2,7 @@
 
 ## 1. Overview & Objective
 
-Phase 2 builds the working local customer resolution workflow required by Challenge 07:
+Phase 2 builds the working local customer resolution workflow:
 1. An agent that uses approved documents and sample records to understand customer requests.
 2. Performs permitted simulated steps in a test environment (updating a mock support ticket).
 3. Verifies the result via read-after-write comparison.
@@ -102,5 +102,5 @@ All operations run locally with synthetic fixtures. No real external APIs, CRM, 
 2. `src/mock_system.py`: In-memory thread-safe mock ticketing and order store with strict field allowlist.
 3. `src/agent.py`: Agent orchestrator with deterministic guardrails and read-after-write verification.
 4. `src/app.py`: Gradio web demo with canonical scenario picker and clear audit view.
-5. `scripts/run_demo.py`: Automated CLI runner demonstrating all 3 challenge scenarios end-to-end.
+5. `scripts/run_demo.py`: Automated CLI runner demonstrating all 3 canonical scenarios end-to-end.
 6. `requirements.txt`: Minimal pinned project dependencies.

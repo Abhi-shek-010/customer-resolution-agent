@@ -4,7 +4,7 @@ Supports:
 - Offline/deterministic mode (default, for CI and fast local verification)
 - Opt-in local Ollama mode (with configurable model, URL, and timeout)
 - Separate evaluation and reporting for development (13) and held-out (9) splits
-- Explicit case-level JSON schema validation against Challenge 07 schema
+- Explicit case-level JSON schema validation against proposal schema specification
 - Separation of raw model proposal metrics from final post-guardrail application metrics
 - Comprehensive verification metrics with visible denominators
 - Hard safety/data-integrity gates with non-zero exit on failure

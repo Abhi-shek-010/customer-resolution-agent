@@ -1,6 +1,6 @@
 # Phase 3 Evaluation & Reliability Report
 
-> **Evaluation Run Date:** 2026-10-18T16:57:31.929050+00:00  
+> **Evaluation Run Date:** 2026-10-18T17:39:34.965905+00:00  
 > **Evaluation Mode:** `OFFLINE`  
 > **Active Model / Engine:** `deterministic_offline_engine`  
 > **Dataset Version SHA-256:** `559483d538a70520c9713f94a1d3308b713e2af502325664db9b4886e002afcc`  

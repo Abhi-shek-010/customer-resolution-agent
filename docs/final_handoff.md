@@ -1,9 +1,9 @@
 # Customer Resolution Agent — Final Project Handoff & Reviewer Guide
 
-> **AI Agent Builder Challenge 07:** *“ACT, REPEAT, VERIFY, RECOVER”*  
+> **Architecture Pattern:** *“ACT, REPEAT, VERIFY, RECOVER”*  
 > **Repository:** `Abhi-shek-010/customer-resolution-agent`  
 > **Branch:** `main`  
-> **Release Target:** Challenge 07 Final Submission Package  
+> **Release Target:** Final Submission & Review Package  
 > **Public Demonstration URL:** [https://abhi-shek-010.github.io/customer-resolution-agent/](https://abhi-shek-010.github.io/customer-resolution-agent/)  
 > **Live Deployment Status:** **Verified Live over HTTPS (HTTP 200)**  
 
@@ -24,7 +24,7 @@ The **Customer Resolution Agent** provides bounded, safe automation for Tier-1 o
 
 ## 2. Core Architecture & The “ACT, REPEAT, VERIFY, RECOVER” Workflow
 
-The agent implements the four-stage lifecycle mandated by the Challenge 07 brief:
+The agent implements a four-stage reliability lifecycle:
 
 ```mermaid
 flowchart TD
@@ -187,7 +187,7 @@ python scripts/evaluate_agent.py --mode ollama --model qwen3.5:2b
 
 ## 8. Requirements Traceability Matrix
 
-| Challenge 07 Requirement | Implemented Mechanism & Code Location | Verification Evidence & Test ID | Status |
+| Core Requirement | Implemented Mechanism & Code Location | Verification Evidence & Test ID | Status |
 |---|---|---|---|
 | **Multi-step Agent doing real work** | [`src/agent.py#L280-L380`](file:///c:/Users/abhi0/Desktop/Customer%20Resolution%20Agent/src/agent.py#L280-L380) orchestrates lookup, triage, mock write, and verification. | [`scripts/run_demo.py`](file:///c:/Users/abhi0/Desktop/Customer%20Resolution%20Agent/scripts/run_demo.py) end-to-end multi-step run. | **Verified** |
 | **Understand request via approved docs & records** | Context ingestion in [`src/agent.py`](file:///c:/Users/abhi0/Desktop/Customer%20Resolution%20Agent/src/agent.py) with exact evidence citation checks. | [`tests/test_reliability.py#L32-L60`](file:///c:/Users/abhi0/Desktop/Customer%20Resolution%20Agent/tests/test_reliability.py#L32-L60) (`test_02`). | **Verified** |

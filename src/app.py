@@ -258,7 +258,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Customer Resolution Agent -- Challenge 07 Demonstration</title>
+  <title>Customer Resolution Agent Demonstration</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -400,7 +400,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 
     <div class="header">
-      <h1>Customer Resolution Agent -- Challenge 07 Demonstration</h1>
+      <h1>Customer Resolution Agent Demonstration</h1>
       <p>Local-first agent: Inspects approved policy & order evidence, applies deterministic safety guardrails, updates mock ticket, and executes read-after-write verification.</p>
     </div>
 
@@ -408,7 +408,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <!-- Left Column: Inputs -->
       <div>
         <div class="card">
-          <div class="card-title">Select Challenge Scenario</div>
+          <div class="card-title">Select Resolution Scenario</div>
           <label>Pre-configured Scenarios</label>
           <select id="scenarioSelector" onchange="loadPreset()">
             <option value="Scenario 1: Routine Grounded Order Status (SYN-001)">Scenario 1 - Routine Grounded Order Status (SYN-001)</option>
@@ -655,14 +655,14 @@ def launch_gradio_if_available(port: int = 7860) -> bool:
     except ImportError:
         return False
 
-    with gr.Blocks(title="Customer Resolution Agent -- Challenge 07 Prototype") as demo:
+    with gr.Blocks(title="Customer Resolution Agent Prototype") as demo:
         gr.Markdown(
             """### [PROTOTYPE] -- SYNTHETIC DATA ONLY
 **All ticket updates and actions run inside a local mock support fixture. No real customers, emails, tickets, or refund transactions are created.**"""
         )
         mode_label = "Hosted Offline Engine (No LLM)" if HOSTED_MODE else "Local Ollama / Deterministic Fallback"
         gr.Markdown(f"**Runtime Inference Mode:** `{mode_label}` | **Session Isolation:** `Active (Per-Connection State)`")
-        gr.Markdown("## Customer Resolution Agent -- Challenge 07 Demonstration")
+        gr.Markdown("## Customer Resolution Agent Demonstration")
 
         # Session state token generated per browser connection
         session_state = gr.State(lambda: uuid.uuid4().hex)
@@ -672,7 +672,7 @@ def launch_gradio_if_available(port: int = 7860) -> bool:
                 scenario_dd = gr.Dropdown(
                     choices=list(PRESET_SCENARIOS.keys()),
                     value=list(PRESET_SCENARIOS.keys())[0],
-                    label="Select Challenge Scenario Preset",
+                    label="Select Resolution Scenario Preset",
                 )
                 tck_input = gr.Textbox(label="Mock Ticket ID", value="TCK-1001")
                 msg_input = gr.Textbox(label="Customer Message (Max 1000 chars)", value="Where is order ORD-1042?", lines=2)

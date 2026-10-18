@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p "test_*.py" -v
 
-      - name: 3. Verify Canonical Challenge 07 Scenarios
+      - name: 3. Verify Canonical Scenarios
         run: |
           python scripts/run_demo.py --offline
 

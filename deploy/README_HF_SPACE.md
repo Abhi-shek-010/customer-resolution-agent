@@ -11,7 +11,7 @@ license: mit
 short_description: Deterministic offline safety engine for tier-1 support inquiries
 ---
 
-# Customer Resolution Agent — Challenge 07 Prototype (Hugging Face Space)
+# Customer Resolution Agent Prototype (Hugging Face Space)
 
 > ⚠️ **PROTOTYPE NOTICE — SYNTHETIC DATA ONLY**
 >

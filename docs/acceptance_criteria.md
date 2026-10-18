@@ -2,7 +2,7 @@
 
 ## 1. Overview & Evaluation Philosophy
 
-These acceptance criteria define the measurable quality, safety, and action gates for the Customer Resolution Agent based on the official Challenge 07 brief (`AI_Agent_Builder_Challenge_Student_Brief.pdf`). Metrics are evaluated on a local synthetic test corpus of **22 hand-authored scenarios** and the **three canonical challenge test cases**.
+These acceptance criteria define the measurable quality, safety, and action gates for the Customer Resolution Agent. Metrics are evaluated on a local synthetic test corpus of **22 hand-authored scenarios** and the **three canonical resolution test cases**.
 
 ---
 
@@ -22,9 +22,9 @@ These acceptance criteria define the measurable quality, safety, and action gate
 
 ---
 
-## 3. Challenge 07 Canonical Test Cases
+## 3. Canonical Test Cases
 
-The prototype must demonstrably succeed across the three representative scenarios mandated by the Challenge 07 brief:
+The prototype must demonstrably succeed across the three representative canonical scenarios:
 
 1. **Scenario 1: Routine Grounded Request (`SYN-001` / `SYN-020`)**
    - *Input*: Customer asks status of order `ORD-1042` with delayed status and policy `SHP-03`.

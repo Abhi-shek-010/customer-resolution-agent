@@ -1,22 +1,22 @@
-# Phase 1 Scope & Architecture — Challenge 07 Customer Resolution Agent
+# Phase 1 Scope & Architecture — Customer Resolution Agent
 
 ## 1. Document Status & Purpose
 
-This document freezes the Phase 1 problem definition, requirements traceability, allowed simulated actions, routing hierarchy, and contracts for the Customer Resolution Agent. It directly reflects the official Challenge 07 brief (`AI_Agent_Builder_Challenge_Student_Brief.pdf`) and replaces prior provisional drafts that omitted simulated actions and verification.
+This document freezes the Phase 1 problem definition, requirements traceability, allowed simulated actions, routing hierarchy, and contracts for the Customer Resolution Agent. It defines simulated actions, safety guardrails, and verification contracts.
 
 ---
 
 ## 2. Requirements Traceability Matrix
 
-| Source / Level | Requirement | Brief Reference | Satisfying Mechanism / Artifact | Status |
+| Source / Level | Requirement | Reference | Satisfying Mechanism / Artifact | Status |
 |---|---|---|---|---|
-| **Brief Stated** | Multi-step agent doing real useful work using tools, not just answering | Page 1, Mission | Mock ticket lookup, policy retrieval, structured triage, simulated ticket update, and read-after-write verification in local Python architecture. | **Confirmed** |
-| **Brief Stated** | Understand request using approved documents & sample records | Page 1, Challenge 07 | Explicitly supplied synthetic order records (`ORD-*`) and policy documents (`SHP-*`, `RET-*`, `DLV-*`, `SEC-*`). | **Confirmed** |
-| **Brief Stated** | Perform permitted steps in a test environment | Page 1, Challenge 07 & ACT | Local mock ticket system allowing strict status/note updates (`draft_ready`, `awaiting_customer_info`, `pending_review`). | **Confirmed** |
-| **Brief Stated** | Verify the result | Page 1, Challenge 07 & VERIFY | Read-after-write verification comparing persisted ticket state against intended update. Mismatch fails closed. | **Confirmed** |
-| **Brief Stated** | Escalate when information is missing or confidence is low | Page 1, Challenge 07 & RECOVER | Missing info routes to `customer_question`; low confidence, disputes, or contradictions route to `human_review`. | **Confirmed** |
-| **Brief Stated** | Repeat on new input | Page 1, REPEAT | Parameterized test suite & interactive Gradio interface executing across 22 synthetic scenarios without code change. | **Confirmed** |
-| **Brief Stated** | Deliverables: prototype, short demo, 3 test cases, brief user/problem note | Page 1, Deliverables | Gradio web UI, 3 canonical challenge test cases, `docs/`, `scripts/`, `README.md`. | **Confirmed** |
+| **Core Spec** | Multi-step agent doing real useful work using tools, not just answering | Core Mission | Mock ticket lookup, policy retrieval, structured triage, simulated ticket update, and read-after-write verification in local Python architecture. | **Confirmed** |
+| **Core Spec** | Understand request using approved documents & sample records | Core Specification | Explicitly supplied synthetic order records (`ORD-*`) and policy documents (`SHP-*`, `RET-*`, `DLV-*`, `SEC-*`). | **Confirmed** |
+| **Core Spec** | Perform permitted steps in a test environment | ACT Standard | Local mock ticket system allowing strict status/note updates (`draft_ready`, `awaiting_customer_info`, `pending_review`). | **Confirmed** |
+| **Core Spec** | Verify the result | VERIFY Standard | Read-after-write verification comparing persisted ticket state against intended update. Mismatch fails closed. | **Confirmed** |
+| **Core Spec** | Escalate when information is missing or confidence is low | RECOVER Standard | Missing info routes to `customer_question`; low confidence, disputes, or contradictions route to `human_review`. | **Confirmed** |
+| **Core Spec** | Repeat on new input | REPEAT Standard | Parameterized test suite & interactive Gradio interface executing across 22 synthetic scenarios without code change. | **Confirmed** |
+| **Core Spec** | Deliverables: prototype, short demo, 3 test cases, brief user/problem note | Project Deliverables | Web UI, 3 canonical test cases, `docs/`, `scripts/`, `README.md`. | **Confirmed** |
 | **Project Decision** | Local-first inference via Ollama | Team Decision | Local inference against open-weight model (`qwen3.5:2b` baseline) with deterministic fallback; no external LLM APIs. | **Confirmed** |
 | **Project Decision** | Strictly isolated synthetic mock system | Team Decision | In-memory / JSON ticket store with allowlisted fields only. No real CRM, customer messaging, or payment integrations. | **Confirmed** |
 | **Project Decision** | 7-Intent / 3-Route / 4-Action Taxonomy | Team Decision | Fixed Pydantic / JSON schema ensuring deterministic post-processing and guardrails. | **Confirmed** |
@@ -34,7 +34,7 @@ This document freezes the Phase 1 problem definition, requirements traceability,
 
 ## 4. Permitted Mock Actions (Test Environment)
 
-The agent operates on a local mock support ticket. To satisfy the challenge requirement that *"an agent must act and verify"*, the agent is permitted to perform exactly three strictly allowlisted simulated mutations on the mock ticket:
+The agent operates on a local mock support ticket. To satisfy the core requirement that *"an agent must act and verify"*, the agent is permitted to perform exactly three strictly allowlisted simulated mutations on the mock ticket:
 
 1. **`draft_ready`**:
    - **Trigger**: Safe, unambiguous request with full evidence and policy support (`self_service` / `answer`).

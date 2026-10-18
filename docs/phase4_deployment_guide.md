@@ -2,7 +2,7 @@
 
 ## 1. Deployment Shape Analysis & Platform Comparison
 
-This document analyzes the deployment options for the **Customer Resolution Agent (Challenge 07)**, establishes strict safety boundaries for public exposure, and specifies the deployment architecture.
+This document analyzes the deployment options for the **Customer Resolution Agent**, establishes strict safety boundaries for public exposure, and specifies the deployment architecture.
 
 ### Platform Comparison Matrix
 
@@ -22,7 +22,7 @@ This document analyzes the deployment options for the **Customer Resolution Agen
 
 ### Primary Public Showcase: GitHub Pages (`docs/index.html`)
 - **Recommendation**: Deploy `docs/index.html` via GitHub Pages.
-- **Rationale**: Meets all student project constraints with zero recurring cost, zero server vulnerability surface, and complete reliability. It delivers a comprehensive project presentation (Challenge 07 objective, architecture, canonical cases, safety policies) and an embedded, browser-isolated deterministic simulator for interactive walkthroughs.
+- **Rationale**: Meets all project constraints with zero recurring cost, zero server vulnerability surface, and complete reliability. It delivers a comprehensive project presentation (project objective, architecture, canonical cases, safety policies) and an embedded, browser-isolated deterministic simulator for interactive walkthroughs.
 - **Inference Mode**: Clearly labeled as **Static Documentation & Offline Deterministic Simulator (No LLM in browser)**.
 
 ### Secondary Interactive Showcase: Hugging Face Spaces (Optional)

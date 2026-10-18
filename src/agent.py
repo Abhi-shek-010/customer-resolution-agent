@@ -102,7 +102,7 @@ ALLOWED_PROPOSAL_FIELDS = set(REQUIRED_PROPOSAL_FIELDS)
 
 
 def validate_proposal_schema(proposal: Any) -> tuple[bool, List[str]]:
-    """Validates a triage proposal against the Challenge 07 JSON schema specification.
+    """Validates a triage proposal against the JSON schema specification.
 
     Checks:
     1. Proposal must be a dictionary.

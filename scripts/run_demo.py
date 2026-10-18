@@ -1,4 +1,4 @@
-"""Automated verification script demonstrating the 3 Challenge 07 scenarios end-to-end."""
+"""Automated verification script demonstrating the 3 canonical scenarios end-to-end."""
 
 from __future__ import annotations
 
@@ -108,12 +108,12 @@ def test_illegal_write_protection(agent: CustomerResolutionAgent):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Challenge 07 canonical verification scenarios.")
+    parser = argparse.ArgumentParser(description="Run canonical verification scenarios.")
     parser.add_argument("--offline", action="store_true", help="Force deterministic offline fallback without network probing.")
     args = parser.parse_args()
 
     mode_label = "OFFLINE" if args.offline else "AUTO"
-    print(f"\nRunning Customer Resolution Agent -- Challenge 07 Verification Suite (Mode: {mode_label})\n")
+    print(f"\nRunning Customer Resolution Agent -- Verification Suite (Mode: {mode_label})\n")
     mock_system = MockSupportSystem()
     agent = CustomerResolutionAgent(mock_system=mock_system, use_ollama=not args.offline)
 
