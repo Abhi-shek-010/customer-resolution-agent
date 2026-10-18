@@ -1,6 +1,6 @@
 # Phase 3 Evaluation & Reliability Report
 
-> **Evaluation Run Date:** 2026-10-18T12:09:21.383841+00:00  
+> **Evaluation Run Date:** 2026-10-18T16:57:31.929050+00:00  
 > **Evaluation Mode:** `OFFLINE`  
 > **Active Model / Engine:** `deterministic_offline_engine`  
 > **Dataset Version SHA-256:** `559483d538a70520c9713f94a1d3308b713e2af502325664db9b4886e002afcc`  
@@ -26,7 +26,7 @@ All metrics are reported with exact denominators. Development and held-out split
 | **Final Intent Accuracy** | 13/13 (100.0%) | 9/9 (100.0%) | 22/22 (100.0%) | >= 85% | PASS |
 | **Final Action Match Accuracy** | 13/13 (100.0%) | 9/9 (100.0%) | 22/22 (100.0%) | >= 90% | PASS |
 
-**Mean Latency:** Development: `0.08 ms` | Held-Out: `0.04 ms` | Combined: `0.06 ms`
+**Mean Latency:** Development: `0.04 ms` | Held-Out: `0.03 ms` | Combined: `0.04 ms`
 
 ---
 

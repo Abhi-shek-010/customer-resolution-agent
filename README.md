@@ -21,6 +21,8 @@ The agent inspects approved policy documents and sample order records, evaluates
 | **Phase 2** | **Completed** | Expanded and 100% validated dataset of **22 synthetic cases** (`data/synthetic_cases.jsonl`) with 59.1% mandatory human-review; core local mock ticketing system (`src/mock_system.py`); orchestration agent with deterministic safety overrides and Ollama integration (`src/agent.py`); automated end-to-end verification script (`scripts/run_demo.py`); dual-mode interactive demonstration web app (`src/app.py`). |
 | **Phase 3** | **Completed** | Repeatable evaluation runner (`scripts/evaluate_agent.py`) supporting offline and live Ollama modes; comprehensive reliability and failure-recovery test suite (`tests/test_reliability.py`); offline GitHub Actions CI workflow (`.github/workflows/ci.yml`); 100% hard safety gates verified across development and held-out splits (`docs/phase3_evaluation_report.md`). |
 | **Phase 4** | **Completed** | Public demonstration landing page with embedded offline simulator (`docs/index.html`); deployment architecture analysis (`docs/phase4_deployment_guide.md`); separate least-privilege GitHub Pages deployment workflow (`.github/workflows/deploy_pages.yml`); Hugging Face Spaces configuration (`deploy/README_HF_SPACE.md`); thread-safe visitor session state isolation and 1,000-char input bounding in `src/app.py`; unit tests expanded to 16. |
+| **Phase 5** | **Completed** | Pre-deployment verification completed; canonical SYN-001/SYN-002/SYN-003 alignment verified; address-change escalation to human review verified; safe text rendering verified; 16 regression tests green; live GitHub Pages demonstration published and verified over HTTPS. |
+| **Phase 6** | **Completed** | Final audit and handoff package compiled; full requirements traceability matrix (`docs/final_handoff.md`); verification suite recorded; reviewer walkthrough guide and boundary guarantees documented. |
 
 ---
 
@@ -189,17 +191,17 @@ The UI displays `[OFFLINE ENGINE (NO LLM)]` and disables all Ollama outbound req
 
 ---
 
-## Manual Hosting Activation Steps (When Ready)
+## Deployment & Public Showcase Status
 
-External hosting remains disabled by default. When you are ready to publish:
+The static demonstration is **live and verified over HTTPS** at:  
+👉 **`https://abhi-shek-010.github.io/customer-resolution-agent/`**
 
-### To Enable GitHub Pages (Public Showcase):
+### Re-Deploying Updates via GitHub Pages:
 1. Navigate to your repository on GitHub: `https://github.com/Abhi-shek-010/customer-resolution-agent`
-2. Go to **Settings** > **Pages**.
-3. Under **Build and deployment** > **Source**, select **GitHub Actions**.
-4. Go to the **Actions** tab, select the **Deploy Public Project Page (GitHub Pages)** workflow.
-5. Click **Run workflow** on the `main` branch.
-6. Your static demonstration will be live at `https://abhi-shek-010.github.io/customer-resolution-agent/`.
+2. Ensure **Settings** > **Pages** > **Source** is set to **GitHub Actions**.
+3. In the **Actions** tab, select the **Deploy Public Project Page (GitHub Pages)** workflow.
+4. Click **Run workflow** on the `main` branch.
+5. GitHub Actions builds and updates the static demonstration from `docs/`.
 
 ### To Deploy on Hugging Face Spaces (Gradio Container):
 1. Create a new Space at [huggingface.co/new-space](https://huggingface.co/new-space).
