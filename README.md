@@ -20,6 +20,7 @@ The agent inspects approved policy documents and sample order records, evaluates
 | **Phase 1** | **Completed** | Full requirements traceability table citing the Challenge 07 brief (`docs/phase1_scope.md`); allowlisted mock ticket actions defined; deterministic safety guardrail hierarchy established; measurable quality gates approved (`docs/acceptance_criteria.md`). |
 | **Phase 2** | **Completed** | Expanded and 100% validated dataset of **22 synthetic cases** (`data/synthetic_cases.jsonl`) with 59.1% mandatory human-review; core local mock ticketing system (`src/mock_system.py`); orchestration agent with deterministic safety overrides and Ollama integration (`src/agent.py`); automated end-to-end verification script (`scripts/run_demo.py`); dual-mode interactive demonstration web app (`src/app.py`). |
 | **Phase 3** | **Completed** | Repeatable evaluation runner (`scripts/evaluate_agent.py`) supporting offline and live Ollama modes; comprehensive reliability and failure-recovery test suite (`tests/test_reliability.py`); offline GitHub Actions CI workflow (`.github/workflows/ci.yml`); 100% hard safety gates verified across development and held-out splits (`docs/phase3_evaluation_report.md`). |
+| **Phase 4** | **Completed** | Public demonstration landing page with embedded offline simulator (`docs/index.html`); deployment architecture analysis (`docs/phase4_deployment_guide.md`); separate least-privilege GitHub Pages deployment workflow (`.github/workflows/deploy_pages.yml`); Hugging Face Spaces configuration (`deploy/README_HF_SPACE.md`); thread-safe visitor session state isolation and 1,000-char input bounding in `src/app.py`; unit tests expanded to 16. |
 
 ---
 
@@ -107,7 +108,7 @@ python scripts/validate_cases.py
 ```
 
 ### 2. Run Reliability & Failure-Recovery Unit Tests
-Run the 11 automated unit tests covering schema validation, safety overrides, unknown reference rejection, allowlist mutation defense, read-after-write mismatch detection, idempotence, offline resilience, and CP1252 console safety:
+Run the 16 automated unit tests covering schema validation, safety overrides, unknown reference rejection, allowlist mutation defense, read-after-write mismatch detection, idempotence, offline resilience, CP1252 console safety, session isolation, canonical scenario alignment, address change escalation, and safe HTML rendering:
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py" -v
@@ -134,15 +135,78 @@ Evaluate the 22 synthetic cases against your local running Ollama instance:
 python scripts/evaluate_agent.py --mode ollama --model qwen3.5:2b
 ```
 
-### 6. Launch the Interactive Local Web Demonstration
-Launch the local demonstration web application (runs on built-in HTTP server or Gradio if installed):
+### 6. Demonstration & Deployment Modes
 
+The project supports three distinct operational modes, clearly delineating where model inference runs and guaranteeing visitor privacy:
+
+| Operational Mode | Environment | Inference Location | Model Backing | Visitor State Isolation | Data Persistence |
+|---|---|---|---|---|---|
+| **1. Local Ollama App** | Localhost (`src/app.py`) | Local GPU/CPU (`localhost:11434`) | `qwen3.5:2b` / `qwen2.5:2b` | In-memory session UUID | Ephemeral (in-memory) |
+| **2. Local Offline App** | Localhost (`HOSTED_MODE=true`) | Deterministic Rule Engine | None (Offline Safety Policy) | In-memory session UUID | Ephemeral (in-memory) |
+| **3. Static Public Showcase** | GitHub Pages (`docs/index.html`) | Browser Sandbox (Client-side JS) | None (Browser Deterministic Simulator) | Browser `sessionStorage` per tab | Zero persistence |
+| **4. Hosted Container Demo** | Hugging Face Spaces (`src/app.py`) | Server Container (`HOSTED_MODE=true`) | None (Offline Safety Policy) | Ephemeral UUID with 2h TTL | Zero persistence |
+
+#### Option A: Running the Local Model-Backed Demo (Ollama)
+Runs genuine local LLM inference against your local Ollama instance:
 ```bash
+# 1. Start Ollama and verify model
+ollama run qwen2.5:2b
+
+# 2. Launch the demo application
 python src/app.py
 ```
+Open **`http://localhost:7860`** in your browser. The UI displays `[LOCAL OLLAMA ACTIVE]`.
 
-Then open your browser at:
-**`http://localhost:7860`**
+#### Option B: Previewing the Public Project Page Locally (Static)
+Preview the GitHub Pages landing page and interactive client-side simulator locally without internet or external servers:
+```bash
+python -m http.server -d docs 8000
+```
+Open **`http://localhost:8000`** in your browser.
+
+#### Option C: Running the App in Forced Hosted/Offline Mode
+Emulates the cloud container behavior where no LLM is present:
+```bash
+# Windows PowerShell
+$env:HOSTED_MODE="true"; python src/app.py
+
+# Windows Command Prompt
+set HOSTED_MODE=true && python src/app.py
+
+# Linux / macOS
+HOSTED_MODE=true python src/app.py
+```
+The UI displays `[OFFLINE ENGINE (NO LLM)]` and disables all Ollama outbound requests.
+
+---
+
+## Session Isolation & Privacy Guarantees
+
+1. **Visitor State Isolation:** In server mode (`src/app.py`), every visitor is assigned an ephemeral session UUID. Mock ticket mutations (e.g. updating `TCK-1001` or clicking "Reset") only mutate that specific visitor's in-memory mock store. Sessions automatically expire after 2 hours of inactivity.
+2. **Zero Server Persistence:** Customer inputs are capped at 1,000 characters and are never written to disk, database, or logs.
+3. **Localhost Isolation:** Hosted demos never attempt to reach the visitor's `localhost:11434`. Local model inference remains strictly local.
+4. **Allowlisted Mock Mutations:** Updates are restricted to `status`, `assigned_route`, `draft_reply`, `internal_notes`, and `updated_at`. Sensitive fields (such as credit card numbers or payment details) are deterministically rejected.
+
+---
+
+## Manual Hosting Activation Steps (When Ready)
+
+External hosting remains disabled by default. When you are ready to publish:
+
+### To Enable GitHub Pages (Public Showcase):
+1. Navigate to your repository on GitHub: `https://github.com/Abhi-shek-010/customer-resolution-agent`
+2. Go to **Settings** > **Pages**.
+3. Under **Build and deployment** > **Source**, select **GitHub Actions**.
+4. Go to the **Actions** tab, select the **Deploy Public Project Page (GitHub Pages)** workflow.
+5. Click **Run workflow** on the `main` branch.
+6. Your static demonstration will be live at `https://abhi-shek-010.github.io/customer-resolution-agent/`.
+
+### To Deploy on Hugging Face Spaces (Gradio Container):
+1. Create a new Space at [huggingface.co/new-space](https://huggingface.co/new-space).
+2. Choose **Gradio** as the Space SDK and configure the name.
+3. Copy the contents of [`deploy/README_HF_SPACE.md`](deploy/README_HF_SPACE.md) as the Space `README.md`.
+4. Push `src/`, `data/`, and `requirements.txt` to the Space repository.
+5. In Space **Settings** > **Variables and secrets**, add variable `HOSTED_MODE=true`.
 
 ---
 
@@ -158,6 +222,8 @@ The repository includes a GitHub Actions workflow at [`.github/workflows/ci.yml`
 7. Uploads the machine-readable evaluation summary JSON and Markdown report as build artifacts.
 8. Requires **no local LLM model weights, no Ollama service, no API keys, and makes zero external model inference calls**.
 
+Deployment to GitHub Pages is handled in a separate, isolated workflow at [`.github/workflows/deploy_pages.yml`](.github/workflows/deploy_pages.yml) using least-privilege permissions (`contents: read`, `pages: write`, `id-token: write`).
+
 ---
 
 ## Repository Structure
@@ -166,14 +232,19 @@ The repository includes a GitHub Actions workflow at [`.github/workflows/ci.yml`
 customer-resolution-agent/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                    # Automated GitHub Actions CI workflow (offline checks)
+│       ├── ci.yml                    # Automated GitHub Actions CI workflow (offline checks)
+│       └── deploy_pages.yml          # Isolated GitHub Pages deployment workflow
 ├── data/
 │   └── synthetic_cases.jsonl         # 22 validated synthetic scenarios (13 dev, 9 held-out)
+├── deploy/
+│   └── README_HF_SPACE.md            # Configuration & metadata for Hugging Face Spaces
 ├── docs/
 │   ├── acceptance_criteria.md        # Measurable quality gates & evaluation criteria
+│   ├── index.html                    # Public project demonstration page & offline simulator
 │   ├── phase1_scope.md               # Requirements traceability & safety architecture
 │   ├── phase2_execution_plan.md      # Implementation blueprint for mock workflow & verification
-│   └── phase3_evaluation_report.md   # Quantitative evaluation report across all 22 cases
+│   ├── phase3_evaluation_report.md   # Quantitative evaluation report across all 22 cases
+│   └── phase4_deployment_guide.md    # Deployment shape analysis & threat model specifications
 ├── outputs/
 │   └── evaluation_summary.json       # Machine-readable JSON evaluation metrics
 ├── scripts/
@@ -184,11 +255,11 @@ customer-resolution-agent/
 ├── src/
 │   ├── __init__.py                   # Package initialization
 │   ├── agent.py                      # CustomerResolutionAgent orchestration & safety rules
-│   ├── app.py                        # Dual-mode (Gradio / HTTP) local demo web app
+│   ├── app.py                        # Session-isolated, bounded demonstration web app
 │   ├── mock_system.py                # MockSupportSystem fixture & read-after-write verification
 │   └── models.py                     # Strict Pydantic/dataclass data contracts
 ├── tests/
-│   └── test_reliability.py          # 11 targeted reliability & failure-recovery unit tests
+│   └── test_reliability.py          # 16 targeted reliability, isolation, HTML safety & recovery tests
 ├── .gitignore                        # Git exclusion rules (caches, local weights, logs)
 ├── Phase_1_Execution_Guide.md        # Complete project walkthrough & Git publication guide
 ├── README.md                         # Project documentation and reproduction instructions

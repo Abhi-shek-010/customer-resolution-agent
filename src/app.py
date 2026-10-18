@@ -1,17 +1,26 @@
-"""Local demonstration web app for the Customer Resolution Agent.
+"""Local and hosted demonstration web app for the Customer Resolution Agent.
 
-Supports standard Gradio if installed, with a self-contained local HTTP server fallback
-so the local prototype runs seamlessly without external package installation.
+Supports:
+- Per-visitor session state isolation (actions/resets in one session never alter another session)
+- Safe hosted deployment mode (HOSTED_MODE=true) with deterministic offline execution
+- Local model-backed mode with local Ollama service detection
+- Safe input length bounds (1000 chars max) with zero server-side persistence/logging of visitor text
+- Transparent inference mode labeling in UI (Hosted Offline Engine vs Local Ollama)
+- Dual-stack architecture: Gradio if installed, plus zero-dependency standalone HTTP server
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
+import threading
+import time
+import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple
 
 # Ensure project root is in sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -22,9 +31,84 @@ from src.mock_system import MockSupportSystem
 from src.agent import CustomerResolutionAgent
 
 
-# Global mock system and agent instance
-GLOBAL_MOCK_SYSTEM = MockSupportSystem()
-GLOBAL_AGENT = CustomerResolutionAgent(mock_system=GLOBAL_MOCK_SYSTEM)
+HOSTED_MODE = os.environ.get("HOSTED_MODE", "false").lower() in ("true", "1", "yes")
+MAX_MESSAGE_LENGTH = 1000
+
+# Thread-safe session management for visitor isolation
+_SESSION_LOCK = threading.Lock()
+SESSION_STORES: Dict[str, Dict[str, Any]] = {}
+
+
+def get_session(session_id: Optional[str] = None) -> Tuple[str, MockSupportSystem, CustomerResolutionAgent]:
+    """Retrieves or creates an isolated visitor session context.
+
+    Each visitor receives a dedicated MockSupportSystem initialized from canonical seed data.
+    Simulated actions or resets in one session do not alter another visitor's state.
+    """
+    clean_session_id = (session_id or "").strip()
+    if not clean_session_id:
+        clean_session_id = uuid.uuid4().hex
+
+    with _SESSION_LOCK:
+        now = time.time()
+        # Evict stale sessions older than 2 hours to prevent memory leaks
+        stale_keys = [k for k, v in SESSION_STORES.items() if now - v["last_active"] > 7200]
+        for k in stale_keys:
+            del SESSION_STORES[k]
+
+        if clean_session_id not in SESSION_STORES:
+            session_mock = MockSupportSystem()
+            # If HOSTED_MODE is True, force use_ollama=False (deterministic offline mode)
+            use_ollama = False if HOSTED_MODE else True
+            session_agent = CustomerResolutionAgent(
+                mock_system=session_mock,
+                use_ollama=use_ollama,
+            )
+            SESSION_STORES[clean_session_id] = {
+                "mock_system": session_mock,
+                "agent": session_agent,
+                "last_active": now,
+            }
+        else:
+            SESSION_STORES[clean_session_id]["last_active"] = now
+
+        entry = SESSION_STORES[clean_session_id]
+        return clean_session_id, entry["mock_system"], entry["agent"]
+
+
+def get_runtime_mode_info(agent: CustomerResolutionAgent) -> Dict[str, str]:
+    """Returns transparent metadata about the current execution and inference environment."""
+    if HOSTED_MODE:
+        return {
+            "mode": "Hosted Offline Demo",
+            "badge": "OFFLINE ENGINE (NO LLM)",
+            "badge_class": "badge-warning",
+            "model_tag": "None (Deterministic Safety Engine)",
+            "description": "Hosted public deployment running in deterministic offline mode. No connection to local LLM or visitor localhost. Decisions and replies are generated strictly by deterministic policy rules and safety guardrails.",
+            "is_hosted": "true",
+            "is_model_backed": "false",
+        }
+    elif agent.use_ollama and agent._check_ollama_alive():
+        return {
+            "mode": "Local Model-Backed (Ollama)",
+            "badge": "LOCAL OLLAMA ACTIVE",
+            "badge_class": "badge-success",
+            "model_tag": agent.model,
+            "description": f"Connected to local Ollama instance ({agent.model} at {agent.ollama_url}). All operations are local and confidential.",
+            "is_hosted": "false",
+            "is_model_backed": "true",
+        }
+    else:
+        return {
+            "mode": "Local Offline Fallback",
+            "badge": "LOCAL OFFLINE FALLBACK",
+            "badge_class": "badge-purple",
+            "model_tag": "None (Offline Heuristics)",
+            "description": "Local Ollama service not detected. Running built-in deterministic classification and safety engine.",
+            "is_hosted": "false",
+            "is_model_backed": "false",
+        }
+
 
 PRESET_SCENARIOS = {
     "Scenario 1: Routine Grounded Order Status (SYN-001)": {
@@ -119,7 +203,18 @@ PRESET_SCENARIOS = {
 }
 
 
-def run_triage(ticket_id: str, message: str, orders_json: str, policies_json: str) -> Dict[str, Any]:
+def run_triage(
+    ticket_id: str,
+    message: str,
+    orders_json: str,
+    policies_json: str,
+    session_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    active_session_id, mock_sys, agent = get_session(session_id)
+
+    # Impose safe length limit on visitor input (never logged to persistent storage)
+    clean_message = (message or "")[:MAX_MESSAGE_LENGTH]
+
     try:
         orders_raw = json.loads(orders_json) if orders_json.strip() else []
     except json.JSONDecodeError:
@@ -133,24 +228,28 @@ def run_triage(ticket_id: str, message: str, orders_json: str, policies_json: st
     orders = [OrderRecord(**o) for o in orders_raw]
     policies = [PolicyEvidence(**p) for p in policies_raw]
 
-    result = GLOBAL_AGENT.process_request(
+    result = agent.process_request(
         ticket_id=ticket_id or "TCK-1001",
-        customer_message=message,
+        customer_message=clean_message,
         order_records=orders,
         policy_evidence=policies,
     )
 
-    ticket_state = GLOBAL_MOCK_SYSTEM.read_ticket(ticket_id or "TCK-1001")
+    ticket_state = mock_sys.read_ticket(ticket_id or "TCK-1001")
+    mode_info = get_runtime_mode_info(agent)
 
     return {
+        "session_id": active_session_id,
+        "runtime_mode": mode_info,
         "orchestration": result.to_dict(),
         "persisted_ticket": ticket_state.to_dict() if ticket_state else {},
     }
 
 
-def reset_mock_data() -> str:
-    GLOBAL_MOCK_SYSTEM.reset_to_seed()
-    return "Mock support system successfully reset to canonical seed data."
+def reset_mock_data(session_id: Optional[str] = None) -> Tuple[str, str]:
+    active_session_id, mock_sys, _ = get_session(session_id)
+    mock_sys.reset_to_seed()
+    return active_session_id, "Mock support system successfully reset to canonical seed data for your session."
 
 
 # Built-in standalone web UI HTML
@@ -159,7 +258,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Customer Resolution Agent — Challenge 07 Prototype</title>
+  <title>Customer Resolution Agent -- Challenge 07 Demonstration</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -181,12 +280,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border: 1px solid var(--warning);
       border-radius: 8px;
       padding: 12px 18px;
-      margin-bottom: 20px;
+      margin-bottom: 14px;
       display: flex;
       align-items: center;
       gap: 12px;
       font-size: 0.95rem;
       color: #fef08a;
+    }
+    .mode-bar {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 16px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      flex-wrap: wrap;
+      gap: 8px;
     }
     .header { margin-bottom: 24px; }
     .header h1 { font-size: 1.8rem; color: #fff; margin-bottom: 6px; }
@@ -202,6 +315,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     .card-title { font-size: 1.15rem; font-weight: 600; margin-bottom: 16px; color: var(--primary); display: flex; justify-content: space-between; align-items: center; }
     label { display: block; font-size: 0.85rem; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+    .label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .char-limit { font-size: 0.75rem; color: var(--muted); }
     select, input, textarea {
       width: 100%;
       background: #0f172a;
@@ -239,6 +354,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .badge-success { background: rgba(34, 197, 94, 0.2); color: var(--success); border: 1px solid var(--success); }
     .badge-warning { background: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid var(--warning); }
     .badge-purple { background: rgba(168, 85, 247, 0.2); color: var(--purple); border: 1px solid var(--purple); }
+    .badge-info { background: rgba(56, 189, 248, 0.2); color: var(--primary); border: 1px solid var(--primary); }
     .stat-row { display: flex; gap: 12px; margin-bottom: 14px; }
     .stat-box { flex: 1; background: #0f172a; padding: 12px; border-radius: 6px; border: 1px solid var(--border); }
     .stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
@@ -267,15 +383,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <body>
   <div class="container">
     <div class="banner">
-      <span style="font-size:1.3rem;">⚠️</span>
+      <span style="font-size:1.3rem;">[PROTOTYPE]</span>
       <div>
-        <strong>PROTOTYPE — SYNTHETIC DATA ONLY.</strong>
-        All ticket updates and operations run inside a local mock support fixture. No real customer messages, refunds, or external services are contacted.
+        <strong>PROTOTYPE -- SYNTHETIC DATA ONLY.</strong>
+        All ticket updates and actions run inside an isolated mock support fixture. No real customer messages, refunds, or external services are contacted.
+      </div>
+    </div>
+
+    <div class="mode-bar">
+      <div>
+        <strong>Execution Mode:</strong> <span id="runtimeModeLabel">Detecting environment...</span>
+      </div>
+      <div>
+        <strong>Session State:</strong> <span id="sessionStatus">Isolated (Session ID: <span id="sessionDisplay">init</span>)</span>
       </div>
     </div>
 
     <div class="header">
-      <h1>Customer Resolution Agent — Challenge 07 Prototype</h1>
+      <h1>Customer Resolution Agent -- Challenge 07 Demonstration</h1>
       <p>Local-first agent: Inspects approved policy & order evidence, applies deterministic safety guardrails, updates mock ticket, and executes read-after-write verification.</p>
     </div>
 
@@ -286,18 +411,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="card-title">Select Challenge Scenario</div>
           <label>Pre-configured Scenarios</label>
           <select id="scenarioSelector" onchange="loadPreset()">
-            <option value="Scenario 1: Routine Grounded Order Status (SYN-001)">Scenario 1 — Routine Grounded Order Status (SYN-001)</option>
-            <option value="Scenario 2: Missing Lookup Information (SYN-002)">Scenario 2 — Missing Lookup Information (SYN-002)</option>
-            <option value="Scenario 3: Delivery Dispute Requiring Mandatory Review (SYN-003)">Scenario 3 — Delivery Dispute Requiring Mandatory Review (SYN-003)</option>
-            <option value="Scenario 4: Prompt Injection Safety Gate (SYN-014)">Scenario 4 — Prompt Injection Safety Gate (SYN-014)</option>
-            <option value="Scenario 5: Conflicting Order Records (SYN-004)">Scenario 5 — Conflicting Order Records (SYN-004)</option>
+            <option value="Scenario 1: Routine Grounded Order Status (SYN-001)">Scenario 1 - Routine Grounded Order Status (SYN-001)</option>
+            <option value="Scenario 2: Missing Lookup Information (SYN-002)">Scenario 2 - Missing Lookup Information (SYN-002)</option>
+            <option value="Scenario 3: Delivery Dispute Requiring Mandatory Review (SYN-003)">Scenario 3 - Delivery Dispute Requiring Mandatory Review (SYN-003)</option>
+            <option value="Scenario 4: Prompt Injection Safety Gate (SYN-014)">Scenario 4 - Prompt Injection Safety Gate (SYN-014)</option>
+            <option value="Scenario 5: Conflicting Order Records (SYN-004)">Scenario 5 - Conflicting Order Records (SYN-004)</option>
           </select>
 
           <label>Mock Ticket ID</label>
           <input type="text" id="ticketId" value="TCK-1001">
 
-          <label>Customer Message</label>
-          <textarea id="customerMessage" style="min-height:70px;">Where is order ORD-1042?</textarea>
+          <div class="label-row">
+            <label>Customer Message</label>
+            <span class="char-limit" id="charCounter">0 / 1000</span>
+          </div>
+          <textarea id="customerMessage" maxlength="1000" oninput="updateCharCount()" style="min-height:70px;">Where is order ORD-1042?</textarea>
 
           <label>Supplied Order Evidence (JSON)</label>
           <textarea id="orderRecords" style="min-height:90px;"></textarea>
@@ -307,7 +435,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
           <div class="btn-row">
             <button onclick="executeAgent()">Run Triage & Simulated Update</button>
-            <button class="secondary" onclick="resetData()">Reset Mock System</button>
+            <button class="secondary" onclick="resetData()">Reset My Session Store</button>
           </div>
         </div>
       </div>
@@ -323,30 +451,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="stat-row">
             <div class="stat-box">
               <div class="stat-label">Simulated Action</div>
-              <div class="stat-value" id="actionTypeBox">—</div>
+              <div class="stat-value" id="actionTypeBox">--</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Status Transition</div>
-              <div class="stat-value" id="statusTransitionBox">—</div>
+              <div class="stat-value" id="statusTransitionBox">--</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Read-Back State</div>
-              <div class="stat-value" id="readBackBox">—</div>
+              <div class="stat-value" id="readBackBox">--</div>
             </div>
           </div>
 
           <div class="stat-row">
             <div class="stat-box">
               <div class="stat-label">Identified Intent</div>
-              <div class="stat-value" id="intentBox">—</div>
+              <div class="stat-value" id="intentBox">--</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Assigned Route</div>
-              <div class="stat-value" id="routeBox">—</div>
+              <div class="stat-value" id="routeBox">--</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Cited Evidence IDs</div>
-              <div class="stat-value" id="evidenceBox">—</div>
+              <div class="stat-value" id="evidenceBox">--</div>
             </div>
           </div>
 
@@ -368,6 +496,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <script>
     const presets = PRESETS_PLACEHOLDER;
 
+    // Retrieve or initialize per-visitor session ID from sessionStorage
+    function getSessionId() {
+      let sid = sessionStorage.getItem("agent_session_id");
+      if (!sid) {
+        sid = "sess_" + Math.random().toString(36).substring(2, 10);
+        sessionStorage.setItem("agent_session_id", sid);
+      }
+      return sid;
+    }
+
+    function updateCharCount() {
+      const msg = document.getElementById("customerMessage").value || "";
+      document.getElementById("charCounter").innerText = msg.length + " / 1000";
+    }
+
     function loadPreset() {
       const selected = document.getElementById("scenarioSelector").value;
       const data = presets[selected];
@@ -376,10 +519,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       document.getElementById("customerMessage").value = data.message;
       document.getElementById("orderRecords").value = JSON.stringify(data.orders, null, 2);
       document.getElementById("policyEvidence").value = JSON.stringify(data.policies, null, 2);
+      updateCharCount();
+      document.getElementById("sessionDisplay").innerText = getSessionId().substring(0, 8);
     }
 
     async function executeAgent() {
+      const sid = getSessionId();
       const payload = {
+        session_id: sid,
         ticket_id: document.getElementById("ticketId").value,
         message: document.getElementById("customerMessage").value,
         orders_json: document.getElementById("orderRecords").value,
@@ -394,9 +541,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         });
         const res = await resp.json();
         const orch = res.orchestration;
+        const mode = res.runtime_mode;
+
+        if (mode) {
+          document.getElementById("runtimeModeLabel").innerText = mode.mode + " [" + mode.badge + "]";
+        }
 
         document.getElementById("actionTypeBox").innerText = orch.simulated_action.action_type;
-        document.getElementById("statusTransitionBox").innerText = orch.simulated_action.before_status + " → " + orch.simulated_action.target_status;
+        document.getElementById("statusTransitionBox").innerText = orch.simulated_action.before_status + " -> " + orch.simulated_action.target_status;
         document.getElementById("readBackBox").innerText = orch.verification.read_back_status;
         document.getElementById("intentBox").innerText = orch.final_intent;
         document.getElementById("routeBox").innerText = orch.final_route;
@@ -407,10 +559,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const badge = document.getElementById("verificationBadge");
         if (orch.verification.verified) {
           badge.className = "badge badge-success";
-          badge.innerText = "✅ VERIFIED";
+          badge.innerText = "[VERIFIED]";
         } else {
           badge.className = "badge badge-purple";
-          badge.innerText = "❌ VERIFICATION FAILED";
+          badge.innerText = "[VERIFICATION FAILED]";
         }
 
         document.getElementById("auditJson").innerText = JSON.stringify(res.persisted_ticket, null, 2);
@@ -420,8 +572,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     async function resetData() {
+      const sid = getSessionId();
       try {
-        const resp = await fetch("/api/reset", { method: "POST" });
+        const resp = await fetch("/api/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sid })
+        });
         const res = await resp.text();
         alert(res);
         loadPreset();
@@ -444,6 +601,14 @@ class StandaloneHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(HTML_TEMPLATE.encode("utf-8"))
+        elif self.path == "/api/mode":
+            # Diagnostic endpoint to query active runtime mode
+            _, _, agent = get_session("probe")
+            mode_info = get_runtime_mode_info(agent)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(mode_info).encode("utf-8"))
         else:
             self.send_response(404)
             self.end_headers()
@@ -459,6 +624,7 @@ class StandaloneHandler(BaseHTTPRequestHandler):
                 message=data.get("message", ""),
                 orders_json=data.get("orders_json", "[]"),
                 policies_json=data.get("policies_json", "[]"),
+                session_id=data.get("session_id"),
             )
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -466,7 +632,9 @@ class StandaloneHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(res).encode("utf-8"))
 
         elif self.path == "/api/reset":
-            msg = reset_mock_data()
+            data = json.loads(body.decode("utf-8")) if body else {}
+            sid = data.get("session_id")
+            _, msg = reset_mock_data(session_id=sid)
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
@@ -476,7 +644,7 @@ class StandaloneHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def log_message(self, format, *args):
-        # Clean logging
+        # Clean logging without dumping private visitor payloads
         sys.stderr.write(f"[Demo Server] {format % args}\n")
 
 
@@ -487,12 +655,17 @@ def launch_gradio_if_available(port: int = 7860) -> bool:
     except ImportError:
         return False
 
-    with gr.Blocks(title="Customer Resolution Agent — Challenge 07 Prototype") as demo:
+    with gr.Blocks(title="Customer Resolution Agent -- Challenge 07 Prototype") as demo:
         gr.Markdown(
-            """### ⚠️ PROTOTYPE — SYNTHETIC DATA ONLY
+            """### [PROTOTYPE] -- SYNTHETIC DATA ONLY
 **All ticket updates and actions run inside a local mock support fixture. No real customers, emails, tickets, or refund transactions are created.**"""
         )
-        gr.Markdown("## Customer Resolution Agent — Challenge 07 Prototype")
+        mode_label = "Hosted Offline Engine (No LLM)" if HOSTED_MODE else "Local Ollama / Deterministic Fallback"
+        gr.Markdown(f"**Runtime Inference Mode:** `{mode_label}` | **Session Isolation:** `Active (Per-Connection State)`")
+        gr.Markdown("## Customer Resolution Agent -- Challenge 07 Demonstration")
+
+        # Session state token generated per browser connection
+        session_state = gr.State(lambda: uuid.uuid4().hex)
 
         with gr.Row():
             with gr.Column():
@@ -502,13 +675,13 @@ def launch_gradio_if_available(port: int = 7860) -> bool:
                     label="Select Challenge Scenario Preset",
                 )
                 tck_input = gr.Textbox(label="Mock Ticket ID", value="TCK-1001")
-                msg_input = gr.Textbox(label="Customer Message", value="Where is order ORD-1042?", lines=2)
+                msg_input = gr.Textbox(label="Customer Message (Max 1000 chars)", value="Where is order ORD-1042?", lines=2)
                 orders_input = gr.Textbox(label="Supplied Order Records (JSON)", lines=4)
                 policies_input = gr.Textbox(label="Supplied Policy Evidence (JSON)", lines=4)
 
                 with gr.Row():
                     run_btn = gr.Button("Run Triage & Simulated Update", variant="primary")
-                    reset_btn = gr.Button("Reset Mock Store to Seed", variant="secondary")
+                    reset_btn = gr.Button("Reset My Session Mock Store", variant="secondary")
 
             with gr.Column():
                 gr.Markdown("### Mock Ticket Lifecycle & Verification")
@@ -525,7 +698,7 @@ def launch_gradio_if_available(port: int = 7860) -> bool:
                 gr.Markdown("### Grounded Draft Reply (Operator Review)")
                 draft_box = gr.Textbox(label="Draft Customer Reply", lines=3, interactive=False)
 
-                gr.Markdown("### Persisted Mock Ticket State")
+                gr.Markdown("### Persisted Mock Ticket State (Isolated)")
                 audit_box = gr.JSON(label="Read-Back Persisted Ticket")
 
         def on_preset_change(choice):
@@ -543,8 +716,8 @@ def launch_gradio_if_available(port: int = 7860) -> bool:
             outputs=[tck_input, msg_input, orders_input, policies_input],
         )
 
-        def on_run(ticket_id, msg, orders_json, policies_json):
-            res = run_triage(ticket_id, msg, orders_json, policies_json)
+        def on_run(sid, ticket_id, msg, orders_json, policies_json):
+            res = run_triage(ticket_id, msg, orders_json, policies_json, session_id=sid)
             orch = res["orchestration"]
             sim_action = orch["simulated_action"]
             verif = orch["verification"]
@@ -565,7 +738,7 @@ def launch_gradio_if_available(port: int = 7860) -> bool:
 
         run_btn.click(
             on_run,
-            inputs=[tck_input, msg_input, orders_input, policies_input],
+            inputs=[session_state, tck_input, msg_input, orders_input, policies_input],
             outputs=[
                 action_box,
                 status_box,
@@ -579,9 +752,13 @@ def launch_gradio_if_available(port: int = 7860) -> bool:
             ],
         )
 
-        reset_btn.click(lambda: reset_mock_data(), outputs=[draft_box])
+        def on_reset(sid):
+            _, msg = reset_mock_data(session_id=sid)
+            return msg
 
-    print(f"\nLaunching Gradio demo at http://localhost:{port}")
+        reset_btn.click(on_reset, inputs=[session_state], outputs=[draft_box])
+
+    print(f"\nLaunching Gradio demo at http://localhost:{port} (HOSTED_MODE={HOSTED_MODE})")
     demo.launch(server_name="127.0.0.1", server_port=port, quiet=True)
     return True
 
@@ -591,8 +768,8 @@ def run_standalone_server(port: int = 7860) -> None:
     server_address = ("127.0.0.1", port)
     httpd = HTTPServer(server_address, StandaloneHandler)
     print("=" * 70)
-    print(f"Customer Resolution Agent Demo Server is live!")
-    print(f"URL: http://localhost:{port}")
+    print("Customer Resolution Agent Demo Server is live!")
+    print(f"URL: http://localhost:{port} (HOSTED_MODE={HOSTED_MODE})")
     print("Press Ctrl+C to terminate the local server.")
     print("=" * 70)
     try:

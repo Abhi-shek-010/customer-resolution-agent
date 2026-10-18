@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -435,7 +436,172 @@ class ReliabilityAndFailureRecoveryTests(unittest.TestCase):
         self.assertEqual(proc_demo.returncode, 0, f"run_demo failed under cp1252:\n{proc_demo.stderr}")
         self.assertNotIn("UnicodeEncodeError", proc_demo.stderr)
 
+    def test_12_visitor_session_state_isolation(self):
+        """12. Visitor session state isolation: mutations or resets in session A do not alter session B."""
+        from src.app import get_session, reset_mock_data, run_triage
+
+        # Session A executes Scenario 1 update
+        res_a = run_triage(
+            ticket_id="TCK-1001",
+            message="Where is order ORD-1042?",
+            orders_json='[{"evidence_id":"ORD-1042","status":"delayed","estimated_delivery":"2026-10-21"}]',
+            policies_json='[{"evidence_id":"SHP-03","text":"Delayed policy"}]',
+            session_id="session_user_alice",
+        )
+        self.assertEqual(res_a["session_id"], "session_user_alice")
+        self.assertEqual(res_a["persisted_ticket"]["status"], "draft_ready")
+        self.assertEqual(res_a["persisted_ticket"]["assigned_route"], "self_service")
+
+        # Session B reads ticket TCK-1001: must still be in initial seed state 'open'
+        _, mock_b, _ = get_session("session_user_bob")
+        tck_b = mock_b.read_ticket("TCK-1001")
+        self.assertEqual(tck_b.status, "open", "Session B ticket was contaminated by Session A!")
+        self.assertEqual(tck_b.assigned_route, "unassigned")
+
+        # Session A resets their mock store
+        reset_mock_data(session_id="session_user_alice")
+        _, mock_a, _ = get_session("session_user_alice")
+        tck_a = mock_a.read_ticket("TCK-1001")
+        self.assertEqual(tck_a.status, "open")
+
+        # Verify Session B is still intact
+        tck_b_after = mock_b.read_ticket("TCK-1001")
+        self.assertEqual(tck_b_after.status, "open")
+
+    def test_13_hosted_mode_labels_offline_engine(self):
+        """13. Hosted mode configuration test: labels deterministic offline engine without connecting to Ollama."""
+        from src.app import get_session, get_runtime_mode_info
+        import src.app as app_module
+
+        orig_hosted = app_module.HOSTED_MODE
+        try:
+            app_module.HOSTED_MODE = True
+            _, _, hosted_agent = get_session("hosted_test_session")
+            mode_info = get_runtime_mode_info(hosted_agent)
+
+            self.assertEqual(mode_info["is_hosted"], "true")
+            self.assertEqual(mode_info["is_model_backed"], "false")
+            self.assertIn("Offline", mode_info["mode"])
+            self.assertIn("Deterministic Safety Engine", mode_info["model_tag"])
+        finally:
+            app_module.HOSTED_MODE = orig_hosted
+
+    def test_14_canonical_scenarios_and_page_alignment(self):
+        """14. Canonical page scenarios agree with dataset IDs, messages, and expected routes."""
+        # 1. Load synthetic cases
+        cases_by_id = {}
+        with open(self.cases_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    item = json.loads(line)
+                    cases_by_id[item["case_id"]] = item
+
+        # Verify dataset ground truth
+        self.assertEqual(cases_by_id["SYN-001"]["expected_route"], "self_service")
+        self.assertEqual(cases_by_id["SYN-001"]["expected_intent"], "order_status")
+        self.assertIn("ORD-1042", cases_by_id["SYN-001"]["customer_message"])
+
+        self.assertEqual(cases_by_id["SYN-002"]["expected_route"], "customer_question")
+        self.assertEqual(cases_by_id["SYN-002"]["expected_intent"], "missing_information")
+
+        self.assertEqual(cases_by_id["SYN-003"]["expected_route"], "human_review")
+        self.assertEqual(cases_by_id["SYN-003"]["expected_intent"], "delivery_dispute")
+
+        # 2. Inspect docs/index.html
+        html_path = ROOT_DIR / "docs" / "index.html"
+        self.assertTrue(html_path.exists(), "docs/index.html missing")
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+
+        # Ensure obsolete/incorrect mappings are absent
+        self.assertNotIn("SYN-001: Address Change", html_content)
+        self.assertNotIn("SYN-002: Damaged Delivery", html_content)
+        self.assertNotIn("SYN-003: Suspected Fraud", html_content)
+
+        # Ensure correct canonical scenario titles and routes are present in HTML
+        self.assertIn("SYN-001: Routine Grounded Order Status", html_content)
+        self.assertIn("SYN-002: Missing Lookup Information", html_content)
+        self.assertIn("SYN-003: Delivery Dispute After Delivered Scan", html_content)
+
+        # Ensure JS SCENARIOS dictionary matches ground truth
+        self.assertIn("'SYN-001':", html_content)
+        self.assertIn("Where is order ORD-1042?", html_content)
+        self.assertTrue("expected_route: 'self_service'" in html_content or "'expected_route': 'self_service'" in html_content)
+
+        self.assertIn("'SYN-002':", html_content)
+        self.assertIn("My package is late. Can you check it?", html_content)
+        self.assertTrue("expected_route: 'customer_question'" in html_content or "'expected_route': 'customer_question'" in html_content)
+
+        self.assertIn("'SYN-003':", html_content)
+        self.assertIn("I never received order ORD-2098, even though tracking says delivered.", html_content)
+        self.assertTrue("expected_route: 'human_review'" in html_content or "'expected_route': 'human_review'" in html_content)
+
+    def test_15_address_change_routed_to_human_review_not_self_service(self):
+        """15. Address and account changes are routed to human_review, not self_service."""
+        # 1. Test Python agent on SYN-007 and address change inputs
+        agent = CustomerResolutionAgent(mock_system=self.mock_system, use_ollama=False)
+        
+        # Exact message from SYN-007
+        res1 = agent.process_request(
+            ticket_id="TCK-1007",
+            customer_message="Change the shipping address for order ORD-6330 to 10 Example Lane.",
+            order_records=[OrderRecord(evidence_id="ORD-6330", status="processing")],
+            policy_evidence=[],
+        )
+        self.assertEqual(res1.final_route, "human_review")
+        self.assertEqual(res1.final_action, "escalate")
+        self.assertEqual(res1.simulated_action.target_status, "pending_review")
+        self.assertNotEqual(res1.final_route, "self_service")
+        self.assertNotIn("address update has been recorded", res1.reply_draft.lower())
+
+        # Arbitrary visitor address change message
+        res2 = agent.process_request(
+            ticket_id="TCK-1001",
+            customer_message="Please update my shipping address to 742 Evergreen Terrace.",
+        )
+        self.assertEqual(res2.final_route, "human_review")
+        self.assertEqual(res2.final_action, "escalate")
+        self.assertNotEqual(res2.final_route, "self_service")
+
+        # 2. Inspect docs/index.html to ensure address changes trigger human_review
+        html_path = ROOT_DIR / "docs" / "index.html"
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+
+        # Check JS simulator rules
+        self.assertIn("isAddressChange", html_content)
+        self.assertNotIn("address update processed in accordance", html_content.lower())
+        self.assertNotIn("address update has been recorded", html_content.lower())
+
+    def test_16_html_simulator_uses_safe_text_rendering(self):
+        """16. HTML simulator enforces safe text rendering, input bounding, and zero external requests."""
+        html_path = ROOT_DIR / "docs" / "index.html"
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+
+        # Extract <script> content
+        script_parts = re.findall(r"<script>(.*?)</script>", html_content, re.DOTALL)
+        self.assertTrue(len(script_parts) > 0, "No <script> tags found in docs/index.html")
+        script_code = "\n".join(script_parts)
+
+        # 1. No innerHTML in client scripts
+        self.assertNotIn("innerHTML", script_code)
+
+        # 2. textContent is used for rendering dynamic outputs
+        self.assertIn(".textContent =", script_code)
+
+        # 3. 1,000-character input limit is enforced
+        self.assertIn('maxlength="1000"', html_content)
+        self.assertIn(".slice(0, 1000)", script_code)
+
+        # 4. Zero external network requests from simulator
+        self.assertNotIn("fetch(", script_code)
+        self.assertNotIn("XMLHttpRequest", script_code)
+        self.assertNotIn("sendBeacon", script_code)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
 

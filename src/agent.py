@@ -578,6 +578,7 @@ class CustomerResolutionAgent:
         )
         is_injection = any(t in msg_lower for t in ["ignore all", "system instruction", "master password", "system prompt"])
         is_payment_card = any(t in msg_lower for t in ["payment card", "visa ending", "credit card", "update the payment"])
+        is_address_change = any(t in msg_lower for t in ["address", "shipping address", "change address"])
         is_consequential_money = any(t in msg_lower for t in ["refund", "cancel", "money back"])
         is_conflicting_orders = len(order_records) > 1 and len({o.status for o in order_records}) > 1
 
@@ -610,6 +611,12 @@ class CustomerResolutionAgent:
             final_action = "escalate"
             rationale = "GUARDRAIL: Payment card update request requires billing specialist transfer."
             reply_draft = "Payment card modifications cannot be performed automatically. Transferring to billing specialist."
+        elif is_address_change:
+            final_intent = "other"
+            final_route = "human_review"
+            final_action = "escalate"
+            rationale = "GUARDRAIL: Shipping address modification request requires human review."
+            reply_draft = "Address changes for processing orders must be handled by a customer support representative."
         elif is_consequential_money:
             final_route = "human_review"
             final_action = "escalate"
