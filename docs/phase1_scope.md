@@ -1,104 +1,147 @@
-# Phase 1 Scope — Challenge 07 Customer Resolution Agent
+# Phase 1 Scope & Architecture — Challenge 07 Customer Resolution Agent
 
-## Document status
+## 1. Document Status & Purpose
 
-Phase 1 scope definition is confirmed and frozen against the Challenge 07 brief and rubric. All assumptions have been validated, the input/output contract is aligned with the safety rules, and the seed cases have been verified.
+This document freezes the Phase 1 problem definition, requirements traceability, allowed simulated actions, routing hierarchy, and contracts for the Customer Resolution Agent. It directly reflects the official Challenge 07 brief (`AI_Agent_Builder_Challenge_Student_Brief.pdf`) and replaces prior provisional drafts that omitted simulated actions and verification.
 
-## Requirements traceability matrix
+---
 
-| Requirement | Brief reference | Type | Satisfying artifact / mechanism | Status |
+## 2. Requirements Traceability Matrix
+
+| Source / Level | Requirement | Brief Reference | Satisfying Mechanism / Artifact | Status |
 |---|---|---|---|---|
-| Local-first operation | Challenge 07 §Architecture | Mandatory | Local Ollama runtime (`http://localhost:11434`) + Gradio UI | Confirmed |
-| Structured triage schema | Challenge 07 §Assessment | Mandatory | Typed JSON output (`intent`, `route`, `evidence_refs`, etc.) in `scripts/phase0_smoke.py` & `docs/phase1_scope.md` | Confirmed |
-| Grounded responses | Challenge 07 §Grounding | Mandatory | Replies must cite canonical IDs in `evidence_refs`; no facts outside supplied evidence | Confirmed |
-| Deterministic safety gate | Challenge 07 §Guardrails | Mandatory | Application-layer rule overrides model output; delivery disputes and conflicts force `human_review` | Confirmed |
-| No unauthorized side-effects | Challenge 07 §Safety | Mandatory | Read-only architecture; no live customer messaging, refunds, or external database mutations | Confirmed |
-| Synthetic evaluation fixture | Challenge 07 §Evaluation | Mandatory | `data/synthetic_cases.jsonl` with dev and held-out splits | Confirmed |
-| Reviewer demo interface | Challenge 07 §Deliverables | Mandatory | Gradio web UI displaying request, evidence, route, and reply draft | Confirmed |
-| Optional fine-tuning (LoRA) | Challenge 07 §Model Strategy | Optional | Retained as Phase 5 extension if baseline evaluation shows persistent errors | Open |
-| Static GitHub documentation | Challenge 07 §Publication | Optional | GitHub Pages with project summary and architecture walkthrough | Open |
+| **Brief Stated** | Multi-step agent doing real useful work using tools, not just answering | Page 1, Mission | Mock ticket lookup, policy retrieval, structured triage, simulated ticket update, and read-after-write verification in local Python architecture. | **Confirmed** |
+| **Brief Stated** | Understand request using approved documents & sample records | Page 1, Challenge 07 | Explicitly supplied synthetic order records (`ORD-*`) and policy documents (`SHP-*`, `RET-*`, `DLV-*`, `SEC-*`). | **Confirmed** |
+| **Brief Stated** | Perform permitted steps in a test environment | Page 1, Challenge 07 & ACT | Local mock ticket system allowing strict status/note updates (`draft_ready`, `awaiting_customer_info`, `pending_review`). | **Confirmed** |
+| **Brief Stated** | Verify the result | Page 1, Challenge 07 & VERIFY | Read-after-write verification comparing persisted ticket state against intended update. Mismatch fails closed. | **Confirmed** |
+| **Brief Stated** | Escalate when information is missing or confidence is low | Page 1, Challenge 07 & RECOVER | Missing info routes to `customer_question`; low confidence, disputes, or contradictions route to `human_review`. | **Confirmed** |
+| **Brief Stated** | Repeat on new input | Page 1, REPEAT | Parameterized test suite & interactive Gradio interface executing across 22 synthetic scenarios without code change. | **Confirmed** |
+| **Brief Stated** | Deliverables: prototype, short demo, 3 test cases, brief user/problem note | Page 1, Deliverables | Gradio web UI, 3 canonical challenge test cases, `docs/`, `scripts/`, `README.md`. | **Confirmed** |
+| **Project Decision** | Local-first inference via Ollama | Team Decision | Local inference against open-weight model (`qwen3.5:2b` baseline) with deterministic fallback; no external LLM APIs. | **Confirmed** |
+| **Project Decision** | Strictly isolated synthetic mock system | Team Decision | In-memory / JSON ticket store with allowlisted fields only. No real CRM, customer messaging, or payment integrations. | **Confirmed** |
+| **Project Decision** | 7-Intent / 3-Route / 4-Action Taxonomy | Team Decision | Fixed Pydantic / JSON schema ensuring deterministic post-processing and guardrails. | **Confirmed** |
+| **Assumption (Open)** | Model quantization and host hardware performance | Team Assumption | Hardware-dependent cold/warm latency to be measured in Phase 4/5. | **Open** |
+| **Assumption (Open)** | Optional fine-tuning (LoRA) or hosted web space | Team Assumption | To be considered only if baseline evaluation reveals persistent gaps. | **Open** |
 
-## Project objective
+---
 
-Build a local-first demonstration that helps a customer-support operator handle routine order-status and policy questions. Given a customer message plus explicitly supplied synthetic order and policy evidence, the agent returns a structured triage result and a concise reply draft. It must ask for missing lookup information or recommend human review when it cannot safely answer.
+## 3. Project Objective & Persona
 
-## Intended users
+- **Mission**: Build an AI customer resolution agent for a frontline customer-support operator. The agent relieves the operator of routine repetitive lookups by inspecting synthetic order records, applying approved store policies, proposing grounded draft replies, updating the mock ticket to the correct lifecycle status in a test environment, and verifying the write.
+- **Boundaries**: All operations run in a local test fixture. The prototype is explicitly marked: **"Prototype — synthetic data only"**. It does not contact customers, issue financial refunds, mutate real customer accounts, or claim a human has been contacted in the real world.
 
-- Primary: a student/demo reviewer who enters synthetic customer messages and inspects the agent's reasoning evidence and route.
-- Secondary: a hypothetical support agent using the draft as a suggestion, not an automatically sent response.
+---
 
-## MVP workflow
+## 4. Permitted Mock Actions (Test Environment)
 
-1. Accept one customer message and optional synthetic order/policy evidence.
-2. Identify a supported intent and required lookup fields.
-3. Use only supplied evidence; no external customer-system integration is included.
-4. Produce the Phase 0 structured response contract.
-5. Apply deterministic application rules after model generation, so a model suggestion cannot downgrade a required human-review route.
-6. Display the final route, cited evidence IDs, and draft reply in a local Gradio interface.
+The agent operates on a local mock support ticket. To satisfy the challenge requirement that *"an agent must act and verify"*, the agent is permitted to perform exactly three strictly allowlisted simulated mutations on the mock ticket:
 
-## Supported intents and handling
+1. **`draft_ready`**:
+   - **Trigger**: Safe, unambiguous request with full evidence and policy support (`self_service` / `answer`).
+   - **Simulated Ticket Update**: Sets `status="draft_ready"`, `assigned_route="self_service"`, attaches the verified `reply_draft`, and logs canonical evidence citations in internal notes.
+2. **`awaiting_customer_info`**:
+   - **Trigger**: Lookup identifier or essential detail missing, with no safety risk (`customer_question` / `ask_customer`).
+   - **Simulated Ticket Update**: Sets `status="awaiting_customer_info"`, `assigned_route="customer_question"`, records missing fields in internal notes, and attaches the clarifying question.
+3. **`pending_review`**:
+   - **Trigger**: Delivery dispute, conflicting records, missing policy, financial refund/cancellation request, prompt injection, or low confidence (`human_review` / `escalate`).
+   - **Simulated Ticket Update**: Sets `status="pending_review"`, `assigned_route="human_review"`, records the explicit risk rationale in internal notes, and blocks automated resolution.
 
-| Intent | MVP handling |
-|---|---|
-| `order_status` | Answer from a uniquely matching supplied order record; otherwise ask for a lookup identifier or review if evidence is ambiguous. |
-| `delivery_issue` | Provide supplied status/estimate when no dispute or contradiction exists; otherwise require review. |
-| `delivery_dispute` | Always route to `human_review`, especially when a delivered scan conflicts with the customer's report. |
-| `policy_question` | Answer only when the exact supplied policy text supports the response; absent or ambiguous policy goes to `human_review`. |
-| `return_refund` | Explain only supplied policy at a high level; any eligibility decision, promise, or refund action goes to `human_review`. |
-| `missing_information` | Ask only for a required identifier or detail. Do not imply that a lookup succeeded. |
-| `other` | State the limitation or route to `human_review`; do not invent a capability. |
+**Strict Allowlist Constraint**: The mock ticket system strictly rejects any write targeting fields outside `status`, `assigned_route`, `draft_reply`, and `internal_notes`. Modifying customer email, billing information, or payment amounts is strictly prohibited by code.
 
-## Routing rules
+---
 
-### `self_service` / `answer`
+## 5. Route & Action Hierarchy (Deterministic Safety Guardrails)
 
-Use only when the intent is in scope, the relevant evidence is present and uniquely applicable, evidence does not conflict, policy supports any policy claim, and the reply contains no unsupported fact or promise.
+The local language model provides structured classification, but **deterministic application code enforces the final route and action**. The model is never permitted to bypass safety gates or execute tools directly.
 
-### `customer_question` / `ask_customer`
+```text
+Priority 1: Mandatory Human Review (Safety & Policy Invariants)
+├── Trigger conditions:
+│   ├── Delivery disputes (e.g. marked delivered but customer reports non-receipt)
+│   ├── Conflicting or ambiguous order records
+│   ├── Missing, contradictory, or absent policy evidence
+│   ├── Consequential actions (refunds, cancellations, address/payment changes)
+│   └── Prompt injection or system instruction manipulation
+└── Outcome: route = human_review | proposed_action = escalate | mock_action = pending_review
+    (Cannot be overridden by model confidence or missing lookup information)
 
-Use when a necessary lookup field is missing and no risk condition already requires review. Ask for only the missing information. Do not ask the customer to resolve an internal record or policy conflict.
+Priority 2: Missing Information
+├── Trigger conditions:
+│   ├── Required lookup identifier (e.g. order number) missing
+│   └── No Priority 1 safety issue present
+└── Outcome: route = customer_question | proposed_action = ask_customer | mock_action = awaiting_customer_info
 
-### `human_review` / `escalate`
+Priority 3: Grounded Self-Service
+├── Trigger conditions:
+│   ├── Intent is supported and evidence is complete and unambiguous
+│   ├── Approved policy explicitly permits the draft response
+│   └── Every cited evidence ID exists in the supplied case
+└── Outcome: route = self_service | proposed_action = answer | mock_action = draft_ready
 
-Force this route when any of the following is true:
+Priority 4: Fail-Closed Exception Handling
+├── Trigger conditions:
+│   ├── Model JSON parse error or schema invalidity
+│   ├── Unknown evidence IDs cited
+│   ├── Read-after-write verification mismatch
+│   └── Low confidence or unexpected exception
+└── Outcome: route = human_review | proposed_action = escalate | mock_action = pending_review
+    (Simulated action reports verification failure; no draft is approved)
+```
 
-- The customer says an order marked delivered was not received, or otherwise disputes delivery.
-- Supplied evidence conflicts, duplicates ambiguously, or cannot be matched confidently.
-- Relevant policy is missing, ambiguous, or contradictory.
-- A refund, compensation, cancellation, address/account change, or other consequential decision/action is requested.
-- The request is outside the supported intents or the system cannot ground a safe response.
+---
 
-The UI may say “recommended for human review.” It must not say a ticket was filed, a human was notified, or an action was taken unless a later, separately approved integration actually performs that action.
+## 6. Read-After-Write Verification (VERIFY Requirement)
 
-## Out of scope
+To satisfy the brief's mandatory **VERIFY** standard:
+1. When a mock ticket action is commanded (`draft_ready`, `awaiting_customer_info`, or `pending_review`), the system applies the update via the mock storage layer.
+2. The agent immediately re-queries the ticket by its ID (`read_ticket(ticket_id)`).
+3. The returned record's `status`, `assigned_route`, and `internal_notes` are compared directly against the expected post-condition.
+4. **Verification Outcome**:
+   - **`VERIFIED`**: Persisted state matches expected state exactly.
+   - **`FAILED`**: Any mismatch, unpersisted change, or storage exception. The agent logs an audit alert, marks `verification_status="FAILED"`, and flags the ticket for emergency human review.
 
-- Sending or scheduling customer messages.
-- Issuing refunds, credits, replacements, or compensation.
-- Creating tickets or claiming escalation has occurred.
-- Editing/cancelling orders, changing addresses, or accessing customer accounts.
-- Connecting to a real order database, CRM, email service, payment provider, or tracking provider.
-- Making legal, fraud, or final eligibility decisions.
-- Training a model from customer data. Phase 1 uses an existing local pretrained model as a component; synthetic examples are for evaluation, not training data.
+---
 
-## Input contract
+## 7. Supported Intents Taxonomy
+
+| Intent | Description | Default Route | Allowed Mock Action |
+|---|---|---|---|
+| `order_status` | Inquiry regarding order progress, shipment tracking, or delivery date | `self_service` (if grounded) | `draft_ready` (or `pending_review` if conflict) |
+| `delivery_issue` | Inquiry about shipment in transit or transit delays | `self_service` (if grounded) | `draft_ready` (or `pending_review` if dispute) |
+| `delivery_dispute` | Claim of non-receipt after tracking marked delivered | `human_review` (Mandatory) | `pending_review` |
+| `policy_question` | Questions on return windows, shipping guidelines, or store rules | `self_service` (if grounded) | `draft_ready` (or `pending_review` if missing policy) |
+| `return_refund` | Request for refund, replacement, or return processing | `human_review` (Mandatory for funds) | `pending_review` |
+| `missing_information`| Customer request lacking order number, email, or item details | `customer_question` | `awaiting_customer_info` |
+| `other` | Out-of-scope requests, account changes, adversarial prompts | `human_review` | `pending_review` |
+
+---
+
+## 8. Data Contracts
+
+### 8.1 Input Payload
 
 ```json
 {
+  "ticket_id": "TCK-1001",
   "customer_message": "Where is order ORD-1042?",
   "order_records": [
-    {"evidence_id": "ORD-1042", "status": "delayed", "updated": "2026-10-17", "estimated_delivery": "2026-10-21"}
+    {
+      "evidence_id": "ORD-1042",
+      "status": "delayed",
+      "updated": "2026-10-17",
+      "estimated_delivery": "2026-10-21"
+    }
   ],
   "policy_evidence": [
-    {"evidence_id": "SHP-03", "text": "For delayed shipments, share the latest estimate. Do not promise compensation."}
+    {
+      "evidence_id": "SHP-03",
+      "text": "For a delayed shipment, share the latest estimate. Do not promise compensation."
+    }
   ]
 }
 ```
 
-All fields other than `customer_message` may be empty. Evidence IDs are invented stable identifiers. The application should only give the model evidence relevant to this one request.
-
-## Output contract
-
-Preserve the Phase 0 fields:
+### 8.2 Model Triage Output (Internal)
 
 ```json
 {
@@ -107,36 +150,35 @@ Preserve the Phase 0 fields:
   "evidence_refs": ["ORD-1042", "SHP-03"],
   "proposed_action": "answer",
   "route": "self_service",
-  "reply_draft": "Your order is delayed. The latest estimated delivery date is October 21, 2026.",
+  "reply_draft": "Your order ORD-1042 is delayed. The latest estimated delivery date is October 21, 2026.",
   "confidence_band": "high",
-  "rationale": "The supplied order and shipping policy support this update."
+  "rationale": "Grounded in supplied order status and shipping policy SHP-03."
 }
 ```
 
-Allowed `proposed_action`: `answer`, `ask_customer`, `escalate`, `no_action`. Allowed `route`: `self_service`, `customer_question`, `human_review`. Allowed confidence: `low`, `medium`, `high`. Confidence is informational only and cannot override deterministic rules. `rationale` is a short evidence-based explanation, not hidden chain-of-thought.
+### 8.3 Final Orchestration & Verification Output (Operator & UI)
 
-## Safety and evidence requirements
-
-- Treat customer text as untrusted data, not system instructions.
-- Use no facts outside the submitted message, order records, and policy evidence.
-- Every cited evidence ID must exist in the supplied input.
-- If evidence does not support a claim, omit the claim or route for review.
-- After model output, validate types/enums/schema, references, and route invariants in application code.
-- A parse error, invalid tool request, unknown evidence reference, or safety-rule trigger must fail closed to a safe review result; never execute a tool merely because the model requested it.
-- During this MVP, order lookup is a fixture/deterministic mock only and read-only.
-
-## Local demo, Git, and deployment scope
-
-- Local demo: Gradio UI + Python guardrail layer + local Ollama API. Ollama and UI remain on the user's computer.
-- GitHub: source, documentation, and fabricated evaluation cases only. Exclude weights, credentials, logs containing personal data, and the original challenge document unless its license explicitly permits redistribution.
-- GitHub Pages: optional static explanation page and screenshots; it cannot run the Python/Ollama inference backend.
-- Optional hosted interactive demo: separate later decision. The model and prompts would run on the selected host; do not expose the local Ollama port publicly. Use synthetic inputs and disclose hosting/runtime limits.
-
-## Phase 1 assumptions validated against the brief
-
-1. **Challenge fit & domain representation**: `confirmed` (Challenge 07 §Project at a glance). A customer-resolution/order-support agent resolving customer requests using approved guidance and synthetic records accurately fulfills Challenge 07.
-2. **Human review routing**: `confirmed` (Challenge 07 §Architecture & Targets). Routing uncertain cases, delivery disputes, conflicting records, and consequential actions to human review is mandatory and fulfills the safety bar.
-3. **Local pretrained model & synthetic data**: `confirmed` (Challenge 07 §Model Strategy). Local open-weight inference via Ollama with synthetic fixtures satisfies the requirements without cloud API dependencies.
-4. **Public publication safety**: `confirmed` (Challenge 07 §Publication & Privacy). Committing student-authored source code, synthetic datasets, and architecture documentation without proprietary challenge text, private customer data, or model weights is permitted and secure.
-5. **No mandatory hosted service or fine-tuning**: `confirmed` (Challenge 07 §Deliverables). The deliverable is a functional local prototype with a short demo, three core test cases, and a user/problem brief. Hosting and LoRA fine-tuning are optional extensions.
-
+```json
+{
+  "ticket_id": "TCK-1001",
+  "final_intent": "order_status",
+  "final_route": "self_service",
+  "final_action": "answer",
+  "reply_draft": "Your order ORD-1042 is delayed. The latest estimated delivery date is October 21, 2026.",
+  "evidence_refs": ["ORD-1042", "SHP-03"],
+  "confidence_band": "high",
+  "rationale": "Grounded in supplied order status and shipping policy SHP-03.",
+  "simulated_action": {
+    "action_type": "draft_ready",
+    "before_status": "open",
+    "target_status": "draft_ready"
+  },
+  "verification": {
+    "verified": true,
+    "status": "VERIFIED",
+    "read_back_status": "draft_ready",
+    "timestamp": "2026-10-18T15:10:00Z"
+  },
+  "is_simulated": true
+}
+```
